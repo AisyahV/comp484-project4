@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CSUN Map Guessing Game</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>CSUN Map Guessing Game</h1>
+    <p>
+      Double-click on the map where you think the building is.
+    </p>
+  </header>
+
+  <main>
+    <section id="controls">
+      <button id="startBtn">Start Game</button>
+
+      <div id="info">
+        <p id="locationPrompt">Click "Start Game" to begin.</p>
+        <p id="statusMessage"></p>
+        <p id="scoreDisplay">Score: 0 / 5</p>
+        <p id="timerDisplay">Time: 0.0 s</p>
+        <p id="highScoreDisplay">High Score: --</p>
+      </div>
+    </section>
+
+    <section id="mapContainer">
+      <div id="map"></div>
+    </section>
+  </main>
+
+  <!-- Main JS logic -->
+  <script src="script.js"></script>
+
+  <!-- Google Maps JS API -->
+  <script
+    async
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBWdsOfu_5HlOmlbo9HKndGiCeq0B57Nto&libraries=marker,geometry&callback=initMap&loading=async">
+  </script>
+</body>
+</html>
