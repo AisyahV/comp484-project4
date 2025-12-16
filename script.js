@@ -38,8 +38,31 @@ const LOCATIONS = [
 // How close (in meters) the user's guess must be to count as "correct"
 const CORRECT_DISTANCE_METERS = 50;
 
-// Key for saving scores in localStorage
-const SCORES_KEY = "csunMapGameScores";
+// "Clean" map style: fewer labels/POIs so it looks more like a static campus map.
+const cleanMap = [
+  {
+    featureType: "all",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "poi",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "transit",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.icon",
+    stylers: [{ visibility: "off" }],
+  },
+  {
+    featureType: "administrative",
+    stylers: [{ visibility: "off" }],
+  },
+];
 
 // === STATE =================================================================
 
@@ -54,7 +77,7 @@ let currentIndex = 0;      // which location (round) the player is on
 let correctCount = 0;      // how many they've gotten right so far
 let guessingEnabled = false;
 
-// Handles for the *last* round (mostly used for the bounce timeout)
+// Handles for the *last* round
 let guessMarker = null;
 let targetMarker = null;
 let highlightCircle = null;
@@ -68,6 +91,9 @@ let allHighlightCircles = [];
 let timerInterval = null;
 let startTime = null;
 
+// In-memory high scores (top 5) – NOT stored in localStorage
+let highScores = [];
+
 // DOM elements
 let startBtn;
 let promptEl;
@@ -79,8 +105,7 @@ let highScoreEl;
 // === INIT MAP ==============================================================
 
 async function initMap() {
-  // Re-centered on the average of your building coordinates so everything
-  // stays on screen better (slightly north/east of your old center).
+  // Re-centered on the average of your building coordinates
   const CSUN_CENTER = { lat: 34.24055, lng: -118.52765 };
 
   const { Map } = await google.maps.importLibrary("maps");
@@ -92,6 +117,7 @@ async function initMap() {
     center: CSUN_CENTER,
     zoom: 16.8,
     mapId: "3d6d062a1a2f5d60d6dc3f28",
+    styles: cleanMap,
     gestureHandling: "none",
     zoomControl: false,
     streetViewControl: false,
@@ -104,7 +130,7 @@ async function initMap() {
   });
 
   wireUpUI();
-  loadScoresFromStorage();
+  loadScoresFromStorage(); // this just initializes the display from highScores (memory)
 
   map.addListener("dblclick", (e) => {
     if (!guessingEnabled) return;
@@ -160,7 +186,7 @@ function startRound() {
   const loc = LOCATIONS[currentIndex];
   guessingEnabled = true;
 
-  // Static map
+  // Static map: we DO NOT pan/zoom each round.
   promptEl.textContent =
     `Round ${currentIndex + 1} of ${LOCATIONS.length}: ` +
     `Double-click where you think ${loc.name} (${loc.grid}) is.`;
@@ -194,24 +220,16 @@ function handleGuess(latLng) {
 
   updateScore();
 
-  // Show markers / circle for this round:
-  // - Correct location marker (animated)
-  // - Customized advanced marker at user's guess
-  // - Circle showing "correct" area
-  //
-  // We keep all of them on the map until the *next* game, but we also
-  // store them in arrays so we can clear everything when a new game starts.
+  // Show markers / circle for this round
   showRoundMarkers(loc, latLng, isCorrect);
 
-  // Move to next location (or end game)
+  // Move to next location (or end game) automatically
   currentIndex++;
 
   if (currentIndex < LOCATIONS.length) {
-    // Brief pause so the user can see the result & markers
     promptEl.textContent = "Get ready for the next location...";
-    setTimeout(startRound, 1500); // delay for pacing
+    setTimeout(startRound, 1500);
   } else {
-    // Last round completed
     setTimeout(endGame, 1500);
   }
 }
@@ -229,6 +247,9 @@ function endGame() {
       : "");
 
   alert(message);
+
+  // Save this result into in-memory highScores (top 5 only)
+  saveScore(correctCount, LOCATIONS.length, totalTime);
 
   promptEl.textContent = 'Game over. Click "Start Game" to play again.';
 }
@@ -286,25 +307,21 @@ function showRoundMarkers(location, guessLatLng, isCorrect) {
 
 // Clear ALL markers/circles from previous game
 function clearRoundGraphics() {
-  // Clear all guess markers
   allGuessMarkers.forEach((m) => {
     m.map = null;
   });
   allGuessMarkers = [];
 
-  // Clear all correct-location markers
   allTargetMarkers.forEach((m) => {
     m.setMap(null);
   });
   allTargetMarkers = [];
 
-  // Clear all circles
   allHighlightCircles.forEach((c) => {
     c.setMap(null);
   });
   allHighlightCircles = [];
 
-  // Reset last-round handles
   guessMarker = null;
   targetMarker = null;
   highlightCircle = null;
@@ -340,66 +357,44 @@ function updateTimerDisplay() {
   timerEl.textContent = `Time: ${seconds.toFixed(1)} s`;
 }
 
-// === HIGH SCORES (WITH PREVIOUS SCORES, BEST AT TOP) =======================
+// === HIGH SCORES (TOP 5, IN MEMORY ONLY) ==================================
 
 function loadScoresFromStorage() {
-  try {
-    const saved = localStorage.getItem(SCORES_KEY);
-    if (!saved) {
-      highScoreEl.textContent = "High Scores: N/A";
-      return;
-    }
-    const scores = JSON.parse(saved);
-    if (!Array.isArray(scores) || scores.length === 0) {
-      highScoreEl.textContent = "High Scores: N/A";
-      return;
-    }
-    renderScoreBoard(scores);
-  } catch {
-    highScoreEl.textContent = "High Scores: Unavailable";
-  }
+  // No real "storage" – just show whatever is in highScores (starts empty)
+  renderScoreBoard(highScores);
 }
 
 function saveScore(correct, total, timeSeconds) {
-  try {
-    const saved = localStorage.getItem(SCORES_KEY);
-    let scores = [];
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        scores = parsed;
-      }
+  // Add the new result to in-memory array
+  highScores.push({
+    correct,
+    total,
+    timeSeconds: typeof timeSeconds === "number" ? timeSeconds : null,
+    timestamp: Date.now(),
+  });
+
+  // Sort scores so the "best" ones are at the top:
+  // 1. Higher number of correct answers first
+  // 2. If tied, the faster time is better (lower seconds)
+  highScores.sort((a, b) => {
+    if (b.correct !== a.correct) {
+      return b.correct - a.correct; // more correct answers is better
     }
+    if (a.timeSeconds == null && b.timeSeconds == null) return 0;
+    if (a.timeSeconds == null) return 1;   // no time recorded = worse
+    if (b.timeSeconds == null) return -1;
+    return a.timeSeconds - b.timeSeconds;  // lower time is better
+  });
 
-    scores.push({
-      correct,
-      total,
-      timeSeconds: typeof timeSeconds === "number" ? timeSeconds : null,
-      timestamp: Date.now(),
-    });
+  // Keep only TOP 5 scores
+  highScores = highScores.slice(0, 5);
 
-    // Sort scores so the "best" ones are at the top:
-    scores.sort((a, b) => {
-      if (b.correct !== a.correct) {
-        return b.correct - a.correct;
-      }
-      if (a.timeSeconds == null && b.timeSeconds == null) return 0;
-      if (a.timeSeconds == null) return 1;
-      if (b.timeSeconds == null) return -1;
-      return a.timeSeconds - b.timeSeconds;
-    });
-
-    // Keep only top 10 scores in storage
-    scores = scores.slice(0, 10);
-
-    localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
-    renderScoreBoard(scores);
-  } catch {
-    // Ignore storage errors
-  }
+  renderScoreBoard(highScores);
 }
 
 function renderScoreBoard(scores) {
+  if (!highScoreEl) return;
+
   if (!scores || scores.length === 0) {
     highScoreEl.textContent = "High Scores: none yet";
     return;
